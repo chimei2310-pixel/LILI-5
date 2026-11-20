@@ -595,22 +595,20 @@
 
         function confirmResetSystem() {
             localStorage.removeItem(STORAGE_KEY);
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const firstDate = formatDateStr(tomorrow);
-            dateConfigs = [createDefaultDayConfig(firstDate)];
-            activeAdminDate = firstDate;
+            
+            // 完全清空所有日期設定，不自動保留任何日期標籤
+            dateConfigs = [];
+            activeAdminDate = '';
             activeStaffDate = '';
             selectedStaffId = null;
 
-            const nextDay = new Date(tomorrow);
-            nextDay.setDate(nextDay.getDate() + 1);
-            document.getElementById('new-date-input').value = formatDateStr(nextDay);
+            // 日期選擇框也清空，讓主管完全自行選擇日期
+            document.getElementById('new-date-input').value = '';
 
             saveState();
             closeResetSystemModal();
             renderAdminView();
-            showToast('系統已重置並恢復預設班表與同仁名單！', 'success');
+            showToast('系統已完全清空！請先選擇並新增要抽班的日期。', 'success');
         }
 
         function getActiveAdminConfig() {
@@ -682,13 +680,9 @@
 
         function removeAdminDate(event, dateStr) {
             event.stopPropagation();
-            if (dateConfigs.length <= 1) {
-                showToast('至少必須保留一個抽班日期！', 'error');
-                return;
-            }
             dateConfigs = dateConfigs.filter(c => c.date !== dateStr);
             if (activeAdminDate === dateStr) {
-                activeAdminDate = dateConfigs[0].date;
+                activeAdminDate = dateConfigs.length > 0 ? dateConfigs[0].date : '';
             }
             if (activeStaffDate === dateStr) {
                 const activeSessions = dateConfigs.filter(c => c.session.active);
@@ -788,6 +782,60 @@
         function renderAdminView() {
             const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
             const tabsContainer = document.getElementById('admin-date-tabs');
+            const currCfg = getActiveAdminConfig();
+
+            // 當尚未建立任何日期（例如剛按完重置系統）時的空白引導畫面
+            if (!currCfg || dateConfigs.length === 0) {
+                tabsContainer.innerHTML = `
+                    <div class="w-full py-4 px-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 text-center text-sm text-slate-500">
+                        目前尚未設定任何抽班日期，請從右上方選擇日期並點擊「<span class="font-bold text-indigo-600">+ 新增日期</span>」開始設定。
+                    </div>
+                `;
+                document.getElementById('admin-editing-date-label').textContent = '尚未選擇日期';
+                const eventInput = document.getElementById('admin-date-event-input');
+                eventInput.value = '';
+                eventInput.disabled = true;
+                document.getElementById('footer-editing-date').textContent = '尚未選擇日期';
+                document.getElementById('btn-copy-prev').classList.add('hidden');
+
+                // 渲染空白的班別與同仁列表（皆未勾選）
+                document.getElementById('admin-shift-list').innerHTML = MASTER_SHIFTS.map(shift => `
+                    <div class="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50/50 opacity-60">
+                        <label class="flex items-center space-x-3 select-none">
+                            <input type="checkbox" disabled class="w-4 h-4 rounded border-slate-300">
+                            <span class="font-bold text-slate-500 text-base">${shift.code}</span>
+                        </label>
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-7 text-center font-bold text-sm text-slate-400">0</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('admin-staff-list').innerHTML = MASTER_STAFF.map(staff => `
+                    <label class="flex items-center space-x-2.5 p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 opacity-60 select-none">
+                        <input type="checkbox" disabled class="w-4 h-4 rounded border-slate-300">
+                        <span class="font-medium text-slate-500 text-sm truncate">${staff.name}</span>
+                    </label>
+                `).join('');
+
+                document.getElementById('stat-staff-count').textContent = '0';
+                document.getElementById('stat-shift-count').textContent = '0';
+                const badge = document.getElementById('stat-badge');
+                badge.textContent = '請先新增日期';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-600';
+
+                const savedIcon = document.getElementById('day-saved-icon');
+                const savedBadge = document.getElementById('day-saved-badge');
+                savedIcon.className = 'w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0';
+                savedIcon.innerHTML = '<i data-lucide="calendar-off" class="w-5 h-5"></i>';
+                savedBadge.className = 'text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-semibold';
+                savedBadge.textContent = '請先新增日期';
+
+                lucide.createIcons();
+                return;
+            }
+
+            document.getElementById('admin-date-event-input').disabled = false;
             
             tabsContainer.innerHTML = dateConfigs.map((cfg, index) => {
                 const isSelected = cfg.date === activeAdminDate;
@@ -810,17 +858,12 @@
                                 ${staffCount}人 / ${shiftCount}籤 ${cfg.saved ? '・已存檔' : '・待存檔'}
                             </div>
                         </div>
-                        ${dateConfigs.length > 1 ? `
-                            <button onclick="removeAdminDate(event, '${cfg.date}')" class="ml-1 p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除此日期">
-                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                            </button>
-                        ` : ''}
+                        <button onclick="removeAdminDate(event, '${cfg.date}')" class="ml-1 p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除此日期">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
                     </div>
                 `;
             }).join('');
-
-            const currCfg = getActiveAdminConfig();
-            if (!currCfg) return;
 
             const dObj = new Date(currCfg.date);
             const dateDisplayStr = `${currCfg.date} (週${weekDays[dObj.getDay()]})`;
@@ -969,6 +1012,10 @@
 
         // 建立所有日期的抽班籤筒
         function startAllLotterySessions() {
+            if (dateConfigs.length === 0) {
+                showToast('請先新增至少一個抽班日期並完成設定！', 'error');
+                return;
+            }
             // 先驗證每一個已建立的日期是否皆符合人數與籤數條件
             for (const cfg of dateConfigs) {
                 if (!validateSingleDayConfig(cfg)) {
