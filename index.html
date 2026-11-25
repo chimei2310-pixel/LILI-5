@@ -431,6 +431,23 @@
         </div>
     </div>
 
+    <!-- 刪除/離職同仁確認彈出視窗 (Modal) -->
+    <div id="delete-staff-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-pop-in border border-slate-100">
+            <div class="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-4">
+                <i data-lucide="user-minus" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800 mb-2">確認移除同仁名單？</h3>
+            <p class="text-sm text-slate-600 leading-relaxed mb-5">
+                即將移除同仁「<span id="delete-staff-modal-name" class="font-bold text-rose-600"></span>」。此操作將<span class="font-semibold text-slate-800">同步移除所有已建立日期的同仁名單</span>；若該同仁在進行中的抽班日期已抽籤，其抽中的班別籤將退回該日籤筒並移除抽籤紀錄。
+            </p>
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeDeleteStaffModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium">取消</button>
+                <button onclick="confirmDeleteStaff()" class="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold hover:bg-rose-700 shadow-sm transition">確認移除</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ==================== 初始資料庫 (依據最新圖片完整補齊班別代號) ====================
         const STORAGE_KEY = 'smart_shift_lottery_v3';
@@ -476,7 +493,9 @@
             { name: '黃鈺珊', checked: false },
             { name: '黃乙玲', checked: false },
             { name: '鄭宛淇', checked: false },
-            { name: '賴儀溱', checked: false }
+            { name: '賴儀溱', checked: false },
+            { name: '謝麗雯', checked: false },
+            { name: '蔡佩君', checked: false }
         ];
 
         // ==================== 系統全域狀態管理 ====================
@@ -486,6 +505,7 @@
         let selectedStaffId = null;
         let isDrawing = false;
         let addModalType = '';
+        let pendingDeleteStaff = null;
 
         function formatDateStr(dateObj) {
             const yyyy = dateObj.getFullYear();
@@ -1068,11 +1088,83 @@
             const cfg = getActiveAdminConfig();
             const container = document.getElementById('admin-staff-list');
             container.innerHTML = cfg.staffList.map(staff => `
-                <label class="flex items-center space-x-2.5 p-2.5 rounded-xl border cursor-pointer transition-all select-none ${staff.checked ? 'border-emerald-500 bg-emerald-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}">
-                    <input type="checkbox" ${staff.checked ? 'checked' : ''} onchange="toggleStaff('${staff.id}')" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500">
-                    <span class="font-medium text-slate-800 text-sm truncate">${staff.name}</span>
-                </label>
+                <div class="flex items-center justify-between gap-1.5 p-2.5 rounded-xl border transition-all ${staff.checked ? 'border-emerald-500 bg-emerald-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}">
+                    <label class="flex items-center space-x-2.5 cursor-pointer flex-grow min-w-0 select-none">
+                        <input type="checkbox" ${staff.checked ? 'checked' : ''} onchange="toggleStaff('${staff.id}')" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 shrink-0">
+                        <span class="font-medium text-slate-800 text-sm truncate">${staff.name}</span>
+                    </label>
+                    <button type="button" onclick="openDeleteStaffModal('${staff.id}', '${encodeURIComponent(staff.name)}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition shrink-0" title="移除同仁（離職）">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
             `).join('');
+        }
+
+        // 開啟刪除/離職同仁確認視窗
+        function openDeleteStaffModal(staffId, encodedName) {
+            const name = decodeURIComponent(encodedName || '');
+            pendingDeleteStaff = { id: staffId, name };
+            document.getElementById('delete-staff-modal-name').textContent = name;
+            document.getElementById('delete-staff-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        // 關閉刪除/離職同仁確認視窗
+        function closeDeleteStaffModal() {
+            pendingDeleteStaff = null;
+            document.getElementById('delete-staff-modal').classList.add('hidden');
+        }
+
+        // 確認從所有日期移除同仁，並清理進行中籤筒與抽籤紀錄
+        function confirmDeleteStaff() {
+            if (!pendingDeleteStaff) return;
+            const { id, name } = pendingDeleteStaff;
+
+            let removedAny = false;
+            dateConfigs.forEach(cfg => {
+                const targetEntry = cfg.staffList.find(u => u.id === id || (name && u.name === name));
+                if (targetEntry) {
+                    removedAny = true;
+                    if (targetEntry.checked) {
+                        cfg.saved = false;
+                    }
+                    cfg.staffList = cfg.staffList.filter(u => u !== targetEntry);
+                }
+
+                // 若該日已有抽班 Session，退回已抽中的班別籤並移除該同仁參與紀錄
+                if (cfg.session) {
+                    const idx = cfg.session.participants.findIndex(p => p.id === id || (name && p.name === name));
+                    if (idx !== -1) {
+                        const participant = cfg.session.participants[idx];
+                        if (participant.drawnShift && Array.isArray(cfg.session.ticketPool)) {
+                            cfg.session.ticketPool.push(participant.drawnShift);
+                            // 重新洗牌確保退回的籤隨機分布
+                            for (let i = cfg.session.ticketPool.length - 1; i > 0; i--) {
+                                const j = Math.floor(Math.random() * (i + 1));
+                                [cfg.session.ticketPool[i], cfg.session.ticketPool[j]] = [cfg.session.ticketPool[j], cfg.session.ticketPool[i]];
+                            }
+                        }
+                        cfg.session.participants.splice(idx, 1);
+                    }
+                }
+            });
+
+            if (selectedStaffId === id) {
+                selectedStaffId = null;
+            }
+
+            closeDeleteStaffModal();
+
+            if (removedAny) {
+                saveState();
+                renderAdminView();
+                if (!document.getElementById('view-staff').classList.contains('hidden')) {
+                    renderStaffStage();
+                }
+                showToast(`已移除同仁「${name}」並同步更新所有日期`, 'success');
+            } else {
+                showToast(`找不到同仁「${name}」`, 'info');
+            }
         }
 
         function toggleStaff(id) {
@@ -1667,6 +1759,9 @@
                         name: val,
                         checked: isCurrent
                     });
+                    if (isCurrent) {
+                        cfg.saved = false;
+                    }
                 });
                 showToast(`已新增同仁「${val}」`, 'success');
             }
