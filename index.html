@@ -1,16 +1,1765 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>醫療服務組抽班系統</title>
-  <meta http-equiv="refresh" content="0; url=https://script.google.com/macros/s/AKfycby9eRx9VIEeVR2OqTRynI_nuPuz1z2bHET4wbsAgi1JsL2Tt0mfndihzB0NpC3sC2Dj/exec">
-  <script>
-    window.location.replace('https://script.google.com/macros/s/AKfycby9eRx9VIEeVR2OqTRynI_nuPuz1z2bHET4wbsAgi1JsL2Tt0mfndihzB0NpC3sC2Dj/exec');
-  </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>醫療服務組抽班系統</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Google Fonts (Noto Sans TC & Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- 引入 Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 引入 Canvas Confetti 慶祝特效 -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- 引入 SheetJS 用於匯出 Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* 盲選卡片翻轉與震動特效 */
+        @keyframes shake {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-5deg) scale(1.05); }
+            75% { transform: rotate(5deg) scale(1.05); }
+        }
+        .animate-shake {
+            animation: shake 0.3s ease-in-out infinite;
+        }
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .animate-pop-in {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
 </head>
-<body>
-  <p>正在開啟醫療服務組抽班系統……</p>
-  <p><a href="https://script.google.com/macros/s/AKfycby9eRx9VIEeVR2OqTRynI_nuPuz1z2bHET4wbsAgi1JsL2Tt0mfndihzB0NpC3sC2Dj/exec">若未自動跳轉，請點此進入抽班系統</a></p>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 text-white p-2 rounded-xl shadow-md shadow-indigo-200">
+                    <i data-lucide="dices" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">醫療服務組抽班系統</h1>
+                    <p class="text-xs text-slate-500 hidden sm:block">公平、透明、高效的排班抽籤工具</p>
+                    <p id="sync-status" class="text-[11px] font-semibold text-slate-400">● 單機模式（尚未連雲端）</p>
+                </div>
+            </div>
+
+            <!-- 模式切換 Tabs -->
+            <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button id="tab-admin" onclick="switchMode('admin')" class="flex items-center space-x-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm">
+                    <i data-lucide="settings-2" class="w-4 h-4"></i>
+                    <span>主管設定</span>
+                </button>
+                <button id="tab-staff" onclick="switchMode('staff')" class="flex items-center space-x-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all text-slate-600 hover:text-slate-900">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <span>同仁抽班</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 全域提示訊息區 (取代 alert) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- 主內容區 -->
+    <main class="flex-grow max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+
+        <!-- ==================== 主管設定模式 ==================== -->
+        <section id="view-admin" class="space-y-6">
+            
+            <!-- 頂部多日期管理列 -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="calendar-range" class="w-5 h-5 text-indigo-600"></i>
+                            抽班日期清單管理（可建立多天）
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">主管可先新增多個要抽班的日期，並分別切換日期設定當天的班別與人員。</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="date" id="new-date-input" class="border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50">
+                        <button onclick="addAdminDate()" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span>新增日期</span>
+                        </button>
+                        <button onclick="openResetSystemModal()" class="px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 text-sm font-semibold rounded-xl hover:bg-rose-100 transition flex items-center gap-1 whitespace-nowrap" title="清除暫存並恢復預設值">
+                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                            <span class="hidden sm:inline">重置系統</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 已建立的日期標籤列 -->
+                <div class="flex flex-wrap items-center gap-2" id="admin-date-tabs">
+                    <!-- 由 JS 動態生成日期按鈕 -->
+                </div>
+            </div>
+
+            <!-- 當前編輯日期的狀態與平衡儀表板 -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+                            <i data-lucide="edit-3" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-500 font-medium">目前正在編輯設定的日期</div>
+                            <div id="admin-editing-date-label" class="text-lg font-extrabold text-indigo-700 whitespace-nowrap">2026-11-20</div>
+                        </div>
+                    </div>
+                    <!-- 日期右側新增：節日或活動名稱編輯欄 -->
+                    <div class="flex items-center gap-2 sm:border-l sm:border-slate-200 sm:pl-4">
+                        <div class="relative w-full sm:w-52">
+                            <input type="text" id="admin-date-event-input" oninput="updateAdminDateEvent(this.value)" placeholder="輸入節日/活動 (如: 忘年會)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/70 placeholder:text-slate-400">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 數量平衡儀表板 -->
+                <div class="flex items-center justify-between sm:justify-end gap-4 bg-slate-50 px-4 py-3 rounded-xl border border-slate-200">
+                    <div class="text-center">
+                        <div class="text-xs text-slate-500 font-medium">當日勾選同仁</div>
+                        <div id="stat-staff-count" class="text-xl font-bold text-slate-800">0</div>
+                    </div>
+                    <div class="text-slate-300 font-bold text-lg">VS</div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-500 font-medium">當日總班別籤數</div>
+                        <div id="stat-shift-count" class="text-xl font-bold text-indigo-600">0</div>
+                    </div>
+                    <div id="stat-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                        請設定數量
+                    </div>
+                </div>
+            </div>
+
+            <!-- 雙欄設定區：班別設定 & 同仁名單 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- 左欄：班表代號與數量設定 (7欄) -->
+                <div class="lg:col-span-7 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-2.5 h-6 bg-indigo-600 rounded-full"></span>
+                            <h2 class="text-lg font-bold text-slate-800">1. 勾選當日班別與名額</h2>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="copyPrevDayConfig()" id="btn-copy-prev" class="text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100 transition" title="複製前一個日期的班別與人員勾選設定">複製前一日設定</button>
+                            <button onclick="resetShifts()" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition">歸零</button>
+                            <button onclick="openAddModal('shift')" class="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 font-semibold hover:bg-indigo-100 transition flex items-center gap-1">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> 新增班別
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-4">勾選此日期需要抽籤的班別，並設定該班別所需的<span class="font-semibold text-slate-700">人數（籤數）</span>。</p>
+                    <!-- 班別清單網格 -->
+                    <div id="admin-shift-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
+                        <!-- 由 JS 動態生成 -->
+                    </div>
+                </div>
+
+                <!-- 右欄：參與抽班同仁勾選 (5欄) -->
+                <div class="lg:col-span-5 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-2.5 h-6 bg-emerald-500 rounded-full"></span>
+                            <h2 class="text-lg font-bold text-slate-800">2. 勾選參與同仁</h2>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="toggleAllStaff(true)" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition">全選</button>
+                            <button onclick="toggleAllStaff(false)" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition">全不選</button>
+                            <button onclick="openAddModal('staff')" class="text-xs px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 font-semibold hover:bg-emerald-100 transition flex items-center gap-1">
+                                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> 新增
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-4">勾選本次參與抽班的同仁，未勾選者將不會出現在前台名單中。</p>
+
+                    <!-- 同仁名單網格 -->
+                    <div id="admin-staff-list" class="grid grid-cols-2 gap-2.5 max-h-[460px] overflow-y-auto pr-1">
+                        <!-- 由 JS 動態生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 單日設定存檔與接續設定操作列 -->
+            <div class="bg-white rounded-2xl p-5 border-2 border-indigo-100 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div id="day-saved-icon" class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                        <i data-lucide="clock" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <span>目前編輯日期：<span id="footer-editing-date" class="text-indigo-600">2026-11-21</span></span>
+                            <span id="day-saved-badge" class="text-xs px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-semibold">尚未按存檔確認</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-0.5">設定好當天的班別名額與同仁後，請點擊右側按鈕存檔並繼續新增／設定下一天。</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+                    <button onclick="saveCurrentDayOnly()" class="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 font-bold text-sm hover:bg-indigo-100 active:scale-95 transition flex items-center justify-center gap-1.5 whitespace-nowrap">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                        <span>儲存此日設定</span>
+                    </button>
+                    <button onclick="saveAndContinueNextDay()" class="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm shadow-sm hover:bg-emerald-700 active:scale-95 transition flex items-center justify-center gap-1.5 whitespace-nowrap">
+                        <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                        <span>存檔並繼續設定下一天</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 啟動抽班按鈕區 -->
+            <div class="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                    <h3 class="text-lg font-bold flex items-center gap-2">
+                        <i data-lucide="shield-check" class="w-5 h-5"></i>
+                        確認所有日期設定無誤，產生多日盲選籤筒
+                    </h3>
+                    <p class="text-indigo-100 text-sm mt-1">系統將為您設定的每一個日期獨立建立並洗牌專屬籤筒，同仁可依日期分別抽班。</p>
+                </div>
+                <button onclick="startAllLotterySessions()" class="w-full sm:w-auto px-6 py-3.5 bg-white text-indigo-700 font-bold rounded-xl shadow-md hover:bg-indigo-50 active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+                    <span>建立所有日期籤筒並前往抽班</span>
+                    <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </section>
+
+
+        <!-- ==================== 同仁抽班模式 ==================== -->
+        <section id="view-staff" class="hidden space-y-6">
+            
+            <!-- 抽班日期切換與橫幅 -->
+            <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+                <!-- 日期選擇器 (當有多天時可切換) -->
+                <div id="staff-date-selector-bar" class="hidden border-b border-slate-100 pb-4">
+                    <div class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                        <i data-lucide="calendar-check" class="w-4 h-4 text-indigo-600"></i>
+                        <span>請先選擇要進行抽班的日期：</span>
+                    </div>
+                    <div id="staff-date-tabs" class="flex flex-wrap gap-2">
+                        <!-- 由 JS 動態生成可抽班日期按鈕 -->
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold mb-2">
+                            <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
+                            <span id="display-date">尚未設定日期</span>
+                        </div>
+                        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">同仁自助盲選抽班區</h2>
+                        <p class="text-sm text-slate-500 mt-1">請確認上方日期後，在下方選擇您的姓名並點擊「盲選抽班」按鈕！</p>
+                    </div>
+
+                    <!-- 抽籤進度條 -->
+                    <div class="w-full sm:w-64 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <div class="flex justify-between text-xs font-bold mb-1.5">
+                            <span class="text-slate-600">當日抽班進度</span>
+                            <span id="progress-text" class="text-indigo-600">0 / 0 人</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                            <div id="progress-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <div class="mt-2 text-right">
+                            <span id="remaining-tickets" class="text-xs text-slate-500 font-medium">剩餘 0 支籤</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 未建立籤筒時的空狀態提示 -->
+            <div id="staff-empty-state" class="hidden bg-white rounded-2xl p-12 border border-slate-200 text-center space-y-4">
+                <div class="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                    <i data-lucide="inbox" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-800">目前尚未建立抽班籤筒</h3>
+                <p class="text-sm text-slate-500 max-w-md mx-auto">請先切換至「主管設定」，勾選抽班日期、班別名額與參與同仁後，點擊建立籤筒。</p>
+                <button onclick="switchMode('admin')" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition">
+                    前往主管設定
+                </button>
+            </div>
+
+            <!-- 抽班互動主舞台 -->
+            <div id="staff-active-stage" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- 左側：挑選姓名與盲選抽班按鈕區 (7欄) -->
+                <div class="lg:col-span-7 space-y-6">
+                    <div class="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+                        <h3 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                            <span class="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs">1</span>
+                            請點選您的姓名
+                        </h3>
+                        
+                        <!-- 同仁按鈕選擇網格 -->
+                        <div id="staff-selector-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mb-6">
+                            <!-- 由 JS 動態生成 -->
+                        </div>
+
+                        <hr class="border-slate-100 my-5">
+
+                        <!-- 盲選抽班操作台 -->
+                        <div class="bg-slate-50 rounded-2xl p-6 border border-slate-200 text-center relative overflow-hidden">
+                            <h3 class="text-base font-bold text-slate-800 mb-4 flex items-center justify-center gap-2">
+                                <span class="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs">2</span>
+                                確認身分後進行盲選
+                            </h3>
+
+                            <!-- 當前選中人員顯示 -->
+                            <div id="selected-user-banner" class="mb-5 py-2 px-4 rounded-xl bg-white border border-slate-200 inline-block shadow-sm">
+                                <span class="text-sm text-slate-500">目前選擇人員：</span>
+                                <span id="selected-user-name" class="text-base font-bold text-slate-400">尚未選擇</span>
+                            </div>
+
+                            <!-- 神秘盲盒視覺卡片 -->
+                            <div class="my-4 flex justify-center">
+                                <div id="mystery-box" class="w-36 h-44 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 p-1 shadow-xl flex items-center justify-center transition-all">
+                                    <div class="w-full h-full bg-slate-900/90 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center text-white p-3">
+                                        <i id="mystery-icon" data-lucide="help-circle" class="w-12 h-12 text-amber-400 mb-2"></i>
+                                        <span id="mystery-text" class="text-sm font-bold tracking-wider text-indigo-200">神秘盲選籤</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 盲選抽班大按鈕 -->
+                            <button id="btn-draw" onclick="executeBlindDraw()" disabled class="mt-4 w-full sm:w-72 py-4 px-6 rounded-2xl font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-2 mx-auto bg-slate-300 text-slate-500 cursor-not-allowed">
+                                <i data-lucide="sparkles" class="w-5 h-5"></i>
+                                <span>請先點選上方姓名</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右側：即時抽班結果看板 (5欄) -->
+                <div class="lg:col-span-5 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col">
+                    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="list-checks" class="w-5 h-5 text-emerald-600"></i>
+                            抽班結果即時榜
+                        </h3>
+                        <div class="flex items-center flex-wrap gap-1.5">
+                            <button onclick="copyResults()" class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition flex items-center gap-1" title="複製當日結果">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i> 複製當日
+                            </button>
+                            <button onclick="exportCurrentDateToExcel()" class="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold hover:bg-emerald-100 transition flex items-center gap-1" title="匯出目前日期 Excel">
+                                <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> 匯出當日
+                            </button>
+                            <button onclick="exportAllDatesToExcel()" class="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 shadow-sm transition flex items-center gap-1" title="匯出所有日期總表 Excel">
+                                <i data-lucide="download" class="w-3.5 h-3.5"></i> 匯出全部日期
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 結果列表 -->
+                    <div id="results-list" class="flex-grow space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                        <!-- 由 JS 動態生成 -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 抽中結果彈出視窗 (Modal) -->
+    <div id="result-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 sm:p-8 text-center shadow-2xl animate-pop-in border border-slate-100">
+            <div class="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="party-popper" class="w-8 h-8"></i>
+            </div>
+            <p class="text-sm font-bold text-indigo-600 mb-1" id="modal-staff-name">同仁姓名</p>
+            <h3 class="text-xl font-bold text-slate-800 mb-4">恭喜完成盲選抽班！</h3>
+            
+            <div class="bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-2xl py-6 px-4 mb-6">
+                <div class="text-xs text-slate-500 font-semibold mb-1">您抽中的班表代號為</div>
+                <div id="modal-shift-result" class="text-4xl font-extrabold text-indigo-700 tracking-wide">D⁶</div>
+            </div>
+
+            <button onclick="closeResultModal()" class="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 active:scale-95 transition">
+                確認並換下一位
+            </button>
+        </div>
+    </div>
+
+    <!-- 新增班別/同仁彈出視窗 (Modal) -->
+    <div id="add-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-pop-in">
+            <h3 id="add-modal-title" class="text-lg font-bold text-slate-800 mb-4">新增項目</h3>
+            <input type="text" id="add-modal-input" placeholder="請輸入名稱..." class="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-slate-800 mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeAddModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium">取消</button>
+                <button onclick="confirmAddItem()" class="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700">確認新增</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重置系統確認彈出視窗 (Modal) -->
+    <div id="reset-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-pop-in">
+            <div class="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-4">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-800 mb-2">確定要重置所有設定與抽籤紀錄嗎？</h3>
+            <p class="text-sm text-slate-500 mb-5">此操作將會清除瀏覽器中已儲存的多日班別設定與抽籤結果，並恢復至系統預設狀態。</p>
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeResetSystemModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium">取消</button>
+                <button onclick="confirmResetSystem()" class="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold hover:bg-rose-700">確認重置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 初始資料庫 (依據最新圖片完整補齊班別代號) ====================
+        const STORAGE_KEY = 'smart_shift_lottery_v3';
+
+        const MASTER_SHIFTS = [
+            { code: 'CO', checked: false, count: 0 },
+            { code: 'CO*', checked: false, count: 0 },
+            { code: 'CO⁵', checked: false, count: 0 },
+            { code: 'CO台', checked: false, count: 0 },
+            { code: 'D⁶', checked: true, count: 1 },
+            { code: 'D⁷', checked: true, count: 1 },
+            { code: 'D△', checked: false, count: 0 },
+            { code: 'D▲', checked: false, count: 0 },
+            { code: 'A³', checked: true, count: 1 },
+            { code: 'F台', checked: true, count: 1 },
+            { code: 'S²', checked: false, count: 0 },
+            { code: 'W⁷', checked: true, count: 1 },
+            { code: 'E⁶', checked: true, count: 1 },
+            { code: 'E△', checked: false, count: 0 },
+            { code: 'E▲', checked: false, count: 0 },
+            { code: 'N', checked: true, count: 1 },
+            { code: 'D₁', checked: false, count: 0 },
+            { code: 'D1台', checked: false, count: 0 },
+            { code: 'Y⁷', checked: false, count: 0 },
+            { code: 'I³', checked: false, count: 0 },
+            { code: 'Z', checked: true, count: 1 },
+            { code: 'off', checked: false, count: 0 }
+        ];
+
+        const MASTER_STAFF = [
+            { name: '賴冠汝', checked: true },
+            { name: '林欣怡', checked: true },
+            { name: '甘婉霏', checked: true },
+            { name: '李文雄', checked: true },
+            { name: '林芬萍', checked: true },
+            { name: '方勇得', checked: true },
+            { name: '徐詣勛', checked: true },
+            { name: '邱婷瑩', checked: true },
+            { name: '甘芷芸', checked: false },
+            { name: '黃惠琳', checked: false },
+            { name: '周琦崴', checked: false },
+            { name: '賴俊穎', checked: false },
+            { name: '黃鈺珊', checked: false },
+            { name: '黃乙玲', checked: false },
+            { name: '鄭宛淇', checked: false },
+            { name: '賴儀溱', checked: false }
+        ];
+
+        // ==================== 系統全域狀態管理 ====================
+        let dateConfigs = [];
+        let activeAdminDate = '';
+        let activeStaffDate = '';
+        let selectedStaffId = null;
+        let isDrawing = false;
+        let addModalType = '';
+
+        function formatDateStr(dateObj) {
+            const yyyy = dateObj.getFullYear();
+            const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const dd = String(dateObj.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function createDefaultDayConfig(dateStr, templateCfg = null) {
+            if (templateCfg) {
+                return {
+                    date: dateStr,
+                    event: '',
+                    saved: false,
+                    shifts: JSON.parse(JSON.stringify(templateCfg.shifts)),
+                    staffList: JSON.parse(JSON.stringify(templateCfg.staffList)),
+                    session: {
+                        active: false,
+                        ticketPool: [],
+                        participants: []
+                    }
+                };
+            }
+            return {
+                date: dateStr,
+                event: '',
+                saved: false,
+                shifts: MASTER_SHIFTS.map((s, idx) => ({
+                    id: `s_${idx + 1}`,
+                    code: s.code,
+                    checked: s.checked,
+                    count: s.count
+                })),
+                staffList: MASTER_STAFF.map((u, idx) => ({
+                    id: `u_${idx + 1}`,
+                    name: u.name,
+                    checked: u.checked
+                })),
+                session: {
+                    active: false,
+                    ticketPool: [],
+                    participants: []
+                }
+            };
+        }
+
+        // ==================== 雲端同步（Apps Script） ====================
+        // ↓↓↓ 把 Apps Script 部署後拿到的「/exec 網址」貼在下面引號裡 ↓↓↓
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyw3TgjXlFDcOMvOPfZUfh-Ta3vPAHwwRPms92iYg5kf9BvjZSXx2LLVokJqCKMQ6mhCg/exec';
+        // ↑↑↑ 留空的話，系統會跟以前一樣只存在這台電腦（單機模式） ↑↑↑
+
+        let pushTimer = null;
+        let pushChain = Promise.resolve();
+        let lastCloudJson = '';
+
+        function setSyncStatus(type, text) {
+            const el = document.getElementById('sync-status');
+            if (!el) return;
+            const colors = { ok: 'text-emerald-600', sync: 'text-amber-500', error: 'text-rose-600', off: 'text-slate-400' };
+            el.className = `text-[11px] font-semibold ${colors[type] || colors.off}`;
+            el.textContent = `● ${text}`;
+        }
+
+        async function apiGet() {
+            const res = await fetch(API_URL);
+            return res.json();
+        }
+
+        async function apiPost(body) {
+            // 用 text/plain 送出，可避開瀏覽器的跨網域預檢 (CORS) 問題
+            const res = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(body)
+            });
+            return res.json();
+        }
+
+        // 把目前設定送上雲端；rebuild=true 代表連籤筒/抽籤結果一起覆蓋（建立籤筒、重置系統時用）
+        function queuePush(rebuild) {
+            pushChain = pushChain.then(async () => {
+                setSyncStatus('sync', '同步中…');
+                try {
+                    const r = await apiPost({ action: 'save', rebuild: !!rebuild, state: { dateConfigs } });
+                    if (r.ok) {
+                        lastCloudJson = JSON.stringify(r.state.dateConfigs);
+                        setSyncStatus('ok', '已同步到雲端');
+                    } else {
+                        setSyncStatus('error', '雲端儲存失敗：' + (r.msg || ''));
+                    }
+                } catch (e) {
+                    setSyncStatus('error', '無法連線雲端，請檢查網路');
+                }
+            });
+            return pushChain;
+        }
+
+        // 立刻送出還在等待中的修改
+        function flushPush() {
+            if (pushTimer) {
+                clearTimeout(pushTimer);
+                pushTimer = null;
+                queuePush(false);
+            }
+            return pushChain;
+        }
+
+        // 從雲端抓最新資料（同仁抽班畫面每 4 秒自動執行一次）
+        async function refreshFromCloud(force = false) {
+            if (!API_URL || isDrawing || pushTimer) return;
+            const staffVisible = !document.getElementById('view-staff').classList.contains('hidden');
+            if (!staffVisible && !force) return;
+            await pushChain;
+            try {
+                const d = await apiGet();
+                if (!d.ok || !d.state || !Array.isArray(d.state.dateConfigs)) return;
+                const json = JSON.stringify(d.state.dateConfigs);
+                setSyncStatus('ok', '已連線雲端（自動更新中）');
+                if (json === lastCloudJson && !force) return;
+                lastCloudJson = json;
+                dateConfigs = d.state.dateConfigs;
+                if (!dateConfigs.some(c => c.date === activeAdminDate)) {
+                    activeAdminDate = dateConfigs.length > 0 ? dateConfigs[0].date : '';
+                }
+                saveLocalOnly();
+                if (isDrawing) return;
+                if (!document.getElementById('view-staff').classList.contains('hidden')) {
+                    renderStaffStage();
+                }
+            } catch (e) {
+                setSyncStatus('error', '無法連線雲端，請檢查網路');
+            }
+        }
+
+        function saveLocalOnly() {
+            try {
+                const payload = {
+                    dateConfigs,
+                    activeAdminDate,
+                    activeStaffDate
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+            } catch (e) {
+                console.warn('無法儲存設定至 localStorage', e);
+            }
+        }
+
+        function saveState(opts = {}) {
+            saveLocalOnly();
+            if (!API_URL) return;
+            if (opts.rebuild) {
+                if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
+                queuePush(true);
+            } else {
+                // 主管連續點選時，停 0.8 秒沒動作才送一次，避免一直上傳
+                if (pushTimer) clearTimeout(pushTimer);
+                setSyncStatus('sync', '有修改，準備同步…');
+                pushTimer = setTimeout(() => {
+                    pushTimer = null;
+                    queuePush(false);
+                }, 800);
+            }
+        }
+
+        function loadState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed.dateConfigs) && parsed.dateConfigs.length > 0) {
+                        dateConfigs = parsed.dateConfigs;
+                        activeAdminDate = parsed.activeAdminDate || dateConfigs[0].date;
+                        activeStaffDate = parsed.activeStaffDate || '';
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.warn('讀取 localStorage 失敗', e);
+            }
+            return false;
+        }
+
+        function switchMode(mode) {
+            const adminView = document.getElementById('view-admin');
+            const staffView = document.getElementById('view-staff');
+            const tabAdmin = document.getElementById('tab-admin');
+            const tabStaff = document.getElementById('tab-staff');
+
+            if (mode === 'admin') {
+                adminView.classList.remove('hidden');
+                staffView.classList.add('hidden');
+                tabAdmin.className = 'flex items-center space-x-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm';
+                tabStaff.className = 'flex items-center space-x-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all text-slate-600 hover:text-slate-900';
+                renderAdminView();
+            } else {
+                adminView.classList.add('hidden');
+                staffView.classList.remove('hidden');
+                tabStaff.className = 'flex items-center space-x-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all bg-white text-indigo-600 shadow-sm';
+                tabAdmin.className = 'flex items-center space-x-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all text-slate-600 hover:text-slate-900';
+                renderStaffStage();
+                // 切到抽班畫面時，先把主管還沒送出的修改送上去，再抓雲端最新結果
+                if (API_URL) flushPush().then(() => refreshFromCloud(true));
+            }
+            lucide.createIcons();
+        }
+
+        function openResetSystemModal() {
+            document.getElementById('reset-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeResetSystemModal() {
+            document.getElementById('reset-modal').classList.add('hidden');
+        }
+
+        function confirmResetSystem() {
+            localStorage.removeItem(STORAGE_KEY);
+            
+            // 完全清空所有日期設定，不自動保留任何日期標籤
+            dateConfigs = [];
+            activeAdminDate = '';
+            activeStaffDate = '';
+            selectedStaffId = null;
+
+            // 日期選擇框也清空，讓主管完全自行選擇日期
+            document.getElementById('new-date-input').value = '';
+
+            saveState({ rebuild: true });
+            closeResetSystemModal();
+            renderAdminView();
+            showToast('系統已完全清空！請先選擇並新增要抽班的日期。', 'success');
+        }
+
+        function getActiveAdminConfig() {
+            return dateConfigs.find(c => c.date === activeAdminDate);
+        }
+
+        function updateAdminDateEvent(val) {
+            const currCfg = getActiveAdminConfig();
+            if (!currCfg) return;
+            currCfg.event = val;
+            currCfg.saved = false;
+            saveState();
+
+            // 即時同步更新日期標籤與下方提示文字，不重繪輸入框避免游標中斷
+            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+            const dObj = new Date(currCfg.date);
+            const eventSuffix = val.trim() ? ` 【${val.trim()}】` : '';
+            document.getElementById('footer-editing-date').textContent = `${currCfg.date} (週${weekDays[dObj.getDay()]})${eventSuffix}`;
+
+            const savedIcon = document.getElementById('day-saved-icon');
+            const savedBadge = document.getElementById('day-saved-badge');
+            savedIcon.className = 'w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0';
+            savedIcon.innerHTML = '<i data-lucide="clock" class="w-5 h-5"></i>';
+            savedBadge.className = 'text-xs px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-semibold';
+            savedBadge.textContent = '尚未按存檔確認';
+
+            const tabEventEl = document.getElementById(`tab-event-${currCfg.date}`);
+            if (tabEventEl) {
+                tabEventEl.textContent = val.trim() ? `・${val.trim()}` : '';
+            }
+            lucide.createIcons();
+        }
+
+        function addAdminDate() {
+            const input = document.getElementById('new-date-input');
+            const dateVal = input.value;
+            if (!dateVal) {
+                showToast('請先選擇要新增的日期！', 'error');
+                return;
+            }
+            if (dateConfigs.some(c => c.date === dateVal)) {
+                showToast(`日期 ${dateVal} 已經在清單中了！`, 'info');
+                selectAdminDate(dateVal);
+                return;
+            }
+
+            // 以目前正在編輯的日期作為模板複製班別與人員結構
+            const currentCfg = getActiveAdminConfig();
+            dateConfigs.push(createDefaultDayConfig(dateVal, currentCfg));
+            // 依日期先後排序
+            dateConfigs.sort((a, b) => a.date.localeCompare(b.date));
+            activeAdminDate = dateVal;
+
+            // 自動將日期輸入框往後推一天，方便連續新增多天
+            const nextDay = new Date(dateVal);
+            nextDay.setDate(nextDay.getDate() + 1);
+            input.value = formatDateStr(nextDay);
+
+            saveState();
+            showToast(`已新增抽班日期：${dateVal}`, 'success');
+            renderAdminView();
+        }
+
+        function selectAdminDate(dateStr) {
+            activeAdminDate = dateStr;
+            saveState();
+            renderAdminView();
+        }
+
+        function removeAdminDate(event, dateStr) {
+            event.stopPropagation();
+            dateConfigs = dateConfigs.filter(c => c.date !== dateStr);
+            if (activeAdminDate === dateStr) {
+                activeAdminDate = dateConfigs.length > 0 ? dateConfigs[0].date : '';
+            }
+            if (activeStaffDate === dateStr) {
+                const activeSessions = dateConfigs.filter(c => c.session.active);
+                activeStaffDate = activeSessions.length > 0 ? activeSessions[0].date : '';
+            }
+            saveState();
+            showToast(`已移除日期：${dateStr}`, 'info');
+            renderAdminView();
+        }
+
+        function copyPrevDayConfig() {
+            const idx = dateConfigs.findIndex(c => c.date === activeAdminDate);
+            if (idx <= 0) {
+                showToast('目前已經是第一個日期，無前一日設定可複製', 'info');
+                return;
+            }
+            const prevCfg = dateConfigs[idx - 1];
+            const currCfg = dateConfigs[idx];
+            currCfg.shifts = JSON.parse(JSON.stringify(prevCfg.shifts));
+            currCfg.staffList = JSON.parse(JSON.stringify(prevCfg.staffList));
+            currCfg.saved = false;
+            saveState();
+            renderAdminView();
+            showToast(`已複製 ${prevCfg.date} 的班別與人員勾選設定！`, 'success');
+        }
+
+        // 驗證單日設定是否完整
+        function validateSingleDayConfig(cfg) {
+            const activeStaff = cfg.staffList.filter(u => u.checked);
+            if (activeStaff.length === 0) {
+                showToast(`日期【${cfg.date}】尚未勾選參與同仁！`, 'error');
+                return false;
+            }
+            let ticketCount = 0;
+            cfg.shifts.forEach(s => {
+                if (s.checked && s.count > 0) ticketCount += s.count;
+            });
+            if (ticketCount === 0) {
+                showToast(`日期【${cfg.date}】尚未勾選任何班別與名額！`, 'error');
+                return false;
+            }
+            if (ticketCount < activeStaff.length) {
+                showToast(`日期【${cfg.date}】的總籤數 (${ticketCount}) 少於參與人數 (${activeStaff.length})！`, 'error');
+                return false;
+            }
+            return true;
+        }
+
+        // 儲存目前日期設定
+        function saveCurrentDayOnly() {
+            const currCfg = getActiveAdminConfig();
+            if (!currCfg) return;
+            if (!validateSingleDayConfig(currCfg)) return;
+
+            currCfg.saved = true;
+            saveState();
+            renderAdminView();
+            showToast(`已成功儲存【${currCfg.date}】的班別與同仁設定！`, 'success');
+        }
+
+        // 存檔並自動切換或建立下一天設定
+        function saveAndContinueNextDay() {
+            const currCfg = getActiveAdminConfig();
+            if (!currCfg) return;
+            if (!validateSingleDayConfig(currCfg)) return;
+
+            currCfg.saved = true;
+
+            // 檢查清單中是否已有下一個日期，若有則直接切換過去；若無則自動建立隔天日期
+            const currIdx = dateConfigs.findIndex(c => c.date === currCfg.date);
+            if (currIdx < dateConfigs.length - 1) {
+                const nextCfg = dateConfigs[currIdx + 1];
+                activeAdminDate = nextCfg.date;
+                saveState();
+                renderAdminView();
+                showToast(`已儲存【${currCfg.date}】，已切換至下一天【${nextCfg.date}】繼續設定！`, 'success');
+            } else {
+                const nextDateObj = new Date(currCfg.date);
+                nextDateObj.setDate(nextDateObj.getDate() + 1);
+                const nextDateStr = formatDateStr(nextDateObj);
+
+                dateConfigs.push(createDefaultDayConfig(nextDateStr, currCfg));
+                dateConfigs.sort((a, b) => a.date.localeCompare(b.date));
+                activeAdminDate = nextDateStr;
+
+                // 同步更新頂部日期選擇器為再隔一天
+                const afterNextObj = new Date(nextDateStr);
+                afterNextObj.setDate(afterNextObj.getDate() + 1);
+                document.getElementById('new-date-input').value = formatDateStr(afterNextObj);
+
+                saveState();
+                renderAdminView();
+                showToast(`已儲存【${currCfg.date}】，並自動建立第 ${dateConfigs.length} 天【${nextDateStr}】供您設定！`, 'success');
+            }
+        }
+
+        function renderAdminView() {
+            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+            const tabsContainer = document.getElementById('admin-date-tabs');
+            const currCfg = getActiveAdminConfig();
+
+            // 當尚未建立任何日期（例如剛按完重置系統）時的空白引導畫面
+            if (!currCfg || dateConfigs.length === 0) {
+                tabsContainer.innerHTML = `
+                    <div class="w-full py-4 px-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 text-center text-sm text-slate-500">
+                        目前尚未設定任何抽班日期，請從右上方選擇日期並點擊「<span class="font-bold text-indigo-600">+ 新增日期</span>」開始設定。
+                    </div>
+                `;
+                document.getElementById('admin-editing-date-label').textContent = '尚未選擇日期';
+                const eventInput = document.getElementById('admin-date-event-input');
+                eventInput.value = '';
+                eventInput.disabled = true;
+                document.getElementById('footer-editing-date').textContent = '尚未選擇日期';
+                document.getElementById('btn-copy-prev').classList.add('hidden');
+
+                // 渲染空白的班別與同仁列表（皆未勾選）
+                document.getElementById('admin-shift-list').innerHTML = MASTER_SHIFTS.map(shift => `
+                    <div class="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50/50 opacity-60">
+                        <label class="flex items-center space-x-3 select-none">
+                            <input type="checkbox" disabled class="w-4 h-4 rounded border-slate-300">
+                            <span class="font-bold text-slate-500 text-base">${shift.code}</span>
+                        </label>
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-7 text-center font-bold text-sm text-slate-400">0</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('admin-staff-list').innerHTML = MASTER_STAFF.map(staff => `
+                    <label class="flex items-center space-x-2.5 p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 opacity-60 select-none">
+                        <input type="checkbox" disabled class="w-4 h-4 rounded border-slate-300">
+                        <span class="font-medium text-slate-500 text-sm truncate">${staff.name}</span>
+                    </label>
+                `).join('');
+
+                document.getElementById('stat-staff-count').textContent = '0';
+                document.getElementById('stat-shift-count').textContent = '0';
+                const badge = document.getElementById('stat-badge');
+                badge.textContent = '請先新增日期';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-600';
+
+                const savedIcon = document.getElementById('day-saved-icon');
+                const savedBadge = document.getElementById('day-saved-badge');
+                savedIcon.className = 'w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0';
+                savedIcon.innerHTML = '<i data-lucide="calendar-off" class="w-5 h-5"></i>';
+                savedBadge.className = 'text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-semibold';
+                savedBadge.textContent = '請先新增日期';
+
+                lucide.createIcons();
+                return;
+            }
+
+            document.getElementById('admin-date-event-input').disabled = false;
+            
+            tabsContainer.innerHTML = dateConfigs.map((cfg, index) => {
+                const isSelected = cfg.date === activeAdminDate;
+                const dObj = new Date(cfg.date);
+                const wDay = weekDays[dObj.getDay()];
+                const staffCount = cfg.staffList.filter(u => u.checked).length;
+                const shiftCount = cfg.shifts.reduce((sum, s) => s.checked ? sum + s.count : sum, 0);
+                const isBalanced = staffCount > 0 && staffCount === shiftCount;
+
+                return `
+                    <div onclick="selectAdminDate('${cfg.date}')" class="group cursor-pointer flex items-center gap-2 px-3.5 py-2 rounded-xl border-2 transition-all select-none ${isSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}">
+                        <div>
+                            <div class="text-sm font-bold flex items-center gap-1.5">
+                                <span class="text-xs px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700">第${index + 1}天</span>
+                                <span>${cfg.date} (週${wDay})</span>
+                                <span id="tab-event-${cfg.date}" class="text-xs font-bold text-indigo-600">${cfg.event && cfg.event.trim() ? `・${cfg.event.trim()}` : ''}</span>
+                                ${cfg.saved ? '<span class="text-xs text-emerald-600 font-extrabold" title="已存檔確認">✓</span>' : ''}
+                            </div>
+                            <div class="text-[11px] mt-0.5 ${isBalanced ? 'text-emerald-600 font-semibold' : 'text-slate-400'}">
+                                ${staffCount}人 / ${shiftCount}籤 ${cfg.saved ? '・已存檔' : '・待存檔'}
+                            </div>
+                        </div>
+                        <button onclick="removeAdminDate(event, '${cfg.date}')" class="ml-1 p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除此日期">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            const dObj = new Date(currCfg.date);
+            const dateDisplayStr = `${currCfg.date} (週${weekDays[dObj.getDay()]})`;
+            const eventVal = currCfg.event || '';
+            document.getElementById('admin-editing-date-label').textContent = dateDisplayStr;
+            document.getElementById('admin-date-event-input').value = eventVal;
+            document.getElementById('footer-editing-date').textContent = eventVal.trim() ? `${dateDisplayStr} 【${eventVal.trim()}】` : dateDisplayStr;
+
+            // 更新下方單日存檔狀態提示
+            const savedIcon = document.getElementById('day-saved-icon');
+            const savedBadge = document.getElementById('day-saved-badge');
+            if (currCfg.saved) {
+                savedIcon.className = 'w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0';
+                savedIcon.innerHTML = '<i data-lucide="check-circle-2" class="w-5 h-5"></i>';
+                savedBadge.className = 'text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-semibold';
+                savedBadge.textContent = '✓ 此日設定已存檔';
+            } else {
+                savedIcon.className = 'w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0';
+                savedIcon.innerHTML = '<i data-lucide="clock" class="w-5 h-5"></i>';
+                savedBadge.className = 'text-xs px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-semibold';
+                savedBadge.textContent = '尚未按存檔確認';
+            }
+
+            // 控制「複製前一日設定」按鈕顯示
+            const currIdx = dateConfigs.findIndex(c => c.date === activeAdminDate);
+            const btnCopyPrev = document.getElementById('btn-copy-prev');
+            if (currIdx > 0) {
+                btnCopyPrev.classList.remove('hidden');
+            } else {
+                btnCopyPrev.classList.add('hidden');
+            }
+
+            renderAdminShifts();
+            renderAdminStaff();
+            updateAdminStats();
+            lucide.createIcons();
+        }
+
+        // ==================== 主管單日班別與人員勾選邏輯 ====================
+        function renderAdminShifts() {
+            const cfg = getActiveAdminConfig();
+            const container = document.getElementById('admin-shift-list');
+            container.innerHTML = cfg.shifts.map(shift => `
+                <div class="flex items-center justify-between p-3 rounded-xl border transition-all ${shift.checked ? 'border-indigo-500 bg-indigo-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}">
+                    <label class="flex items-center space-x-3 cursor-pointer flex-grow select-none">
+                        <input type="checkbox" ${shift.checked ? 'checked' : ''} onchange="toggleShift('${shift.id}')" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500">
+                        <span class="font-bold text-slate-800 text-base">${shift.code}</span>
+                    </label>
+                    <div class="flex items-center space-x-1.5">
+                        <button onclick="changeShiftCount('${shift.id}', -1)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition">-</button>
+                        <span class="w-7 text-center font-bold text-sm ${shift.checked ? 'text-indigo-700' : 'text-slate-400'}">${shift.count}</span>
+                        <button onclick="changeShiftCount('${shift.id}', 1)" class="w-7 h-7 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold flex items-center justify-center transition">+</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleShift(id) {
+            const cfg = getActiveAdminConfig();
+            const shift = cfg.shifts.find(s => s.id === id);
+            if (shift) {
+                shift.checked = !shift.checked;
+                if (shift.checked && shift.count === 0) shift.count = 1;
+                if (!shift.checked) shift.count = 0;
+                cfg.saved = false;
+                saveState();
+                renderAdminView();
+            }
+        }
+
+        function changeShiftCount(id, delta) {
+            const cfg = getActiveAdminConfig();
+            const shift = cfg.shifts.find(s => s.id === id);
+            if (shift) {
+                const newCount = Math.max(0, shift.count + delta);
+                shift.count = newCount;
+                shift.checked = newCount > 0;
+                cfg.saved = false;
+                saveState();
+                renderAdminView();
+            }
+        }
+
+        function resetShifts() {
+            const cfg = getActiveAdminConfig();
+            cfg.shifts.forEach(s => { s.checked = false; s.count = 0; });
+            cfg.saved = false;
+            saveState();
+            renderAdminView();
+            showToast(`已將 ${cfg.date} 的班別數量歸零`, 'info');
+        }
+
+        function renderAdminStaff() {
+            const cfg = getActiveAdminConfig();
+            const container = document.getElementById('admin-staff-list');
+            container.innerHTML = cfg.staffList.map(staff => `
+                <label class="flex items-center space-x-2.5 p-2.5 rounded-xl border cursor-pointer transition-all select-none ${staff.checked ? 'border-emerald-500 bg-emerald-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}">
+                    <input type="checkbox" ${staff.checked ? 'checked' : ''} onchange="toggleStaff('${staff.id}')" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500">
+                    <span class="font-medium text-slate-800 text-sm truncate">${staff.name}</span>
+                </label>
+            `).join('');
+        }
+
+        function toggleStaff(id) {
+            const cfg = getActiveAdminConfig();
+            const staff = cfg.staffList.find(u => u.id === id);
+            if (staff) {
+                staff.checked = !staff.checked;
+                cfg.saved = false;
+                saveState();
+                renderAdminView();
+            }
+        }
+
+        function toggleAllStaff(selectAll) {
+            const cfg = getActiveAdminConfig();
+            cfg.staffList.forEach(u => u.checked = selectAll);
+            cfg.saved = false;
+            saveState();
+            renderAdminView();
+        }
+
+        function updateAdminStats() {
+            const cfg = getActiveAdminConfig();
+            const selectedStaffCount = cfg.staffList.filter(u => u.checked).length;
+            const totalShiftTickets = cfg.shifts.reduce((sum, s) => s.checked ? sum + s.count : sum, 0);
+
+            document.getElementById('stat-staff-count').textContent = selectedStaffCount;
+            document.getElementById('stat-shift-count').textContent = totalShiftTickets;
+
+            const badge = document.getElementById('stat-badge');
+            if (selectedStaffCount === 0 || totalShiftTickets === 0) {
+                badge.textContent = '請勾選名單與班別';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-600';
+            } else if (selectedStaffCount === totalShiftTickets) {
+                badge.textContent = '人數與籤數完美相符';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800';
+            } else if (totalShiftTickets > selectedStaffCount) {
+                badge.textContent = `籤數多 ${totalShiftTickets - selectedStaffCount} 支 (可盲選)`;
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800';
+            } else {
+                badge.textContent = `籤數不足 ${selectedStaffCount - totalShiftTickets} 支`;
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800';
+            }
+        }
+
+        // 建立所有日期的抽班籤筒
+        function startAllLotterySessions() {
+            if (dateConfigs.length === 0) {
+                showToast('請先新增至少一個抽班日期並完成設定！', 'error');
+                return;
+            }
+            // 先驗證每一個已建立的日期是否皆符合人數與籤數條件
+            for (const cfg of dateConfigs) {
+                if (!validateSingleDayConfig(cfg)) {
+                    activeAdminDate = cfg.date;
+                    renderAdminView();
+                    return;
+                }
+                cfg.saved = true;
+            }
+
+            // 全部驗證通過，為每一個日期建立獨立洗牌的籤筒
+            dateConfigs.forEach(cfg => {
+                const activeStaff = cfg.staffList.filter(u => u.checked);
+                let rawTickets = [];
+                cfg.shifts.forEach(s => {
+                    if (s.checked && s.count > 0) {
+                        for (let i = 0; i < s.count; i++) {
+                            rawTickets.push(s.code);
+                        }
+                    }
+                });
+
+                // Fisher-Yates 洗牌演算法
+                for (let i = rawTickets.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [rawTickets[i], rawTickets[j]] = [rawTickets[j], rawTickets[i]];
+                }
+
+                cfg.session = {
+                    active: true,
+                    ticketPool: rawTickets,
+                    participants: activeStaff.map(u => ({
+                        id: u.id,
+                        name: u.name,
+                        drawnShift: null,
+                        drawnTime: null
+                    }))
+                };
+            });
+
+            // 預設切換到第一個日期進行抽班
+            activeStaffDate = dateConfigs[0].date;
+            selectedStaffId = null;
+            saveState({ rebuild: true });
+
+            showToast(`已成功為 ${dateConfigs.length} 個日期建立專屬盲選籤筒！`, 'success');
+            switchMode('staff');
+        }
+
+        // ==================== 同仁抽班前台邏輯 ====================
+        function getActiveStaffConfig() {
+            return dateConfigs.find(c => c.date === activeStaffDate && c.session.active);
+        }
+
+        function selectStaffDate(dateStr) {
+            if (isDrawing) return;
+            activeStaffDate = dateStr;
+            selectedStaffId = null;
+            saveLocalOnly();
+            renderStaffStage();
+        }
+
+        function renderStaffStage() {
+            const emptyState = document.getElementById('staff-empty-state');
+            const activeStage = document.getElementById('staff-active-stage');
+            const dateSelectorBar = document.getElementById('staff-date-selector-bar');
+
+            const activeConfigs = dateConfigs.filter(c => c.session.active);
+
+            if (activeConfigs.length === 0) {
+                emptyState.classList.remove('hidden');
+                activeStage.classList.add('hidden');
+                dateSelectorBar.classList.add('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            activeStage.classList.remove('hidden');
+
+            // 確保 activeStaffDate 有效
+            if (!activeConfigs.some(c => c.date === activeStaffDate)) {
+                activeStaffDate = activeConfigs[0].date;
+            }
+
+            // 渲染前台日期選擇列 (顯示各日期進度狀態)
+            dateSelectorBar.classList.remove('hidden');
+            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+            document.getElementById('staff-date-tabs').innerHTML = activeConfigs.map(cfg => {
+                const isSelected = cfg.date === activeStaffDate;
+                const dObj = new Date(cfg.date);
+                const wDay = weekDays[dObj.getDay()];
+                const drawn = cfg.session.participants.filter(p => p.drawnShift !== null).length;
+                const total = cfg.session.participants.length;
+                const isDone = drawn === total;
+                const eventTag = cfg.event && cfg.event.trim() ? `・${cfg.event.trim()}` : '';
+
+                return `
+                    <button onclick="selectStaffDate('${cfg.date}')" class="px-4 py-2.5 rounded-xl border-2 text-left transition-all flex items-center gap-2.5 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-300 hover:bg-white'}">
+                        <div>
+                            <div class="text-sm font-bold">${cfg.date} (週${wDay})${eventTag}</div>
+                            <div class="text-[11px] ${isSelected ? 'text-indigo-100' : (isDone ? 'text-emerald-600 font-bold' : 'text-slate-500')}">
+                                ${isDone ? '✓ 已全數抽完' : `進度：${drawn} / ${total} 人`}
+                            </div>
+                        </div>
+                    </button>
+                `;
+            }).join('');
+
+            const currCfg = getActiveStaffConfig();
+            const session = currCfg.session;
+
+            // 若剛選的人已在別台電腦抽過，就取消選取
+            if (selectedStaffId) {
+                const sel = session.participants.find(p => p.id === selectedStaffId);
+                if (!sel || sel.drawnShift !== null) selectedStaffId = null;
+            }
+
+            // 格式化當前日期顯示
+            const dateObj = new Date(currCfg.date);
+            const currEventTag = currCfg.event && currCfg.event.trim() ? ` ｜ ${currCfg.event.trim()}` : '';
+            document.getElementById('display-date').textContent = `${currCfg.date} (週${weekDays[dateObj.getDay()]})${currEventTag}`;
+
+            // 更新進度條
+            const drawnCount = session.participants.filter(p => p.drawnShift !== null).length;
+            const totalCount = session.participants.length;
+            const pct = totalCount > 0 ? Math.round((drawnCount / totalCount) * 100) : 0;
+
+            document.getElementById('progress-text').textContent = `${drawnCount} / ${totalCount} 人`;
+            document.getElementById('progress-bar').style.width = `${pct}%`;
+            document.getElementById('remaining-tickets').textContent = `籤筒剩餘 ${session.ticketPool.length} 支盲選籤`;
+
+            // 渲染人員選擇按鈕
+            const selectorGrid = document.getElementById('staff-selector-grid');
+            selectorGrid.innerHTML = session.participants.map(p => {
+                const isDrawn = p.drawnShift !== null;
+                const isSelected = p.id === selectedStaffId;
+
+                if (isDrawn) {
+                    return `
+                        <button disabled class="p-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 flex flex-col items-center justify-center cursor-not-allowed">
+                            <span class="text-sm font-bold line-through">${p.name}</span>
+                            <span class="text-xs font-extrabold text-indigo-600 mt-0.5 bg-indigo-50 px-2 py-0.5 rounded">${p.drawnShift}</span>
+                        </button>
+                    `;
+                }
+
+                return `
+                    <button onclick="selectStaffForDraw('${p.id}')" class="p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center ${isSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md scale-105' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-slate-50'}">
+                        <span class="text-sm font-bold">${p.name}</span>
+                        <span class="text-[11px] mt-0.5 ${isSelected ? 'text-indigo-600 font-semibold' : 'text-slate-400'}">${isSelected ? '已選擇' : '點擊選擇'}</span>
+                    </button>
+                `;
+            }).join('');
+
+            // 更新盲選操作台狀態
+            updateDrawControlPanel();
+
+            // 渲染即時結果列表
+            renderResultsList();
+            lucide.createIcons();
+        }
+
+        function selectStaffForDraw(id) {
+            if (isDrawing) return;
+            const currCfg = getActiveStaffConfig();
+            if (!currCfg) return;
+            const person = currCfg.session.participants.find(p => p.id === id);
+            if (!person || person.drawnShift !== null) return;
+
+            selectedStaffId = id;
+            renderStaffStage();
+        }
+
+        function updateDrawControlPanel() {
+            const currCfg = getActiveStaffConfig();
+            const nameDisplay = document.getElementById('selected-user-name');
+            const btnDraw = document.getElementById('btn-draw');
+            const mysteryText = document.getElementById('mystery-text');
+
+            if (!selectedStaffId || !currCfg) {
+                nameDisplay.textContent = '尚未選擇';
+                nameDisplay.className = 'text-base font-bold text-slate-400';
+                btnDraw.disabled = true;
+                btnDraw.className = 'mt-4 w-full sm:w-72 py-4 px-6 rounded-2xl font-bold text-lg shadow-sm transition-all flex items-center justify-center gap-2 mx-auto bg-slate-300 text-slate-500 cursor-not-allowed';
+                btnDraw.innerHTML = `<i data-lucide="mouse-pointer-click" class="w-5 h-5"></i><span>請先點選上方姓名</span>`;
+                mysteryText.textContent = '等待選擇人員';
+            } else {
+                const person = currCfg.session.participants.find(p => p.id === selectedStaffId);
+                nameDisplay.textContent = person.name;
+                nameDisplay.className = 'text-lg font-extrabold text-indigo-600';
+                btnDraw.disabled = false;
+                btnDraw.className = 'mt-4 w-full sm:w-72 py-4 px-6 rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 mx-auto bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 active:scale-95 cursor-pointer';
+                btnDraw.innerHTML = `<i data-lucide="sparkles" class="w-5 h-5"></i><span>立即盲選抽班</span>`;
+                mysteryText.textContent = `${person.name} 的專屬盲籤`;
+            }
+            lucide.createIcons();
+        }
+
+        // 執行盲選抽籤動畫與邏輯
+        function executeBlindDraw() {
+            const currCfg = getActiveStaffConfig();
+            if (isDrawing || !selectedStaffId || !currCfg || currCfg.session.ticketPool.length === 0) return;
+
+            const session = currCfg.session;
+            const person = session.participants.find(p => p.id === selectedStaffId);
+            if (!person || person.drawnShift !== null) return;
+
+            isDrawing = true;
+            const btnDraw = document.getElementById('btn-draw');
+            const mysteryBox = document.getElementById('mystery-box');
+            const mysteryText = document.getElementById('mystery-text');
+
+            // 鎖定按鈕並啟動搖晃動畫
+            btnDraw.disabled = true;
+            btnDraw.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i><span>正在開啟盲選籤...</span>`;
+            mysteryBox.classList.add('animate-shake');
+            lucide.createIcons();
+
+            // 模擬快速跳動班別代號的視覺緊張感
+            const sampleCodes = currCfg.shifts.map(s => s.code);
+            const shuffleInterval = setInterval(() => {
+                const randomCode = sampleCodes[Math.floor(Math.random() * sampleCodes.length)];
+                mysteryText.textContent = randomCode;
+            }, 80);
+
+            // ===== 有連雲端：由 Apps Script 統一抽籤，避免兩台電腦同時抽到同一支籤 =====
+            if (API_URL) {
+                drawViaCloud(currCfg.date, person.id, shuffleInterval);
+                return;
+            }
+
+            // 1.2 秒後揭曉結果
+            setTimeout(() => {
+                clearInterval(shuffleInterval);
+                mysteryBox.classList.remove('animate-shake');
+
+                // 從當日已洗牌的籤筒中隨機抽取一支
+                const randomIndex = Math.floor(Math.random() * session.ticketPool.length);
+                const wonShift = session.ticketPool.splice(randomIndex, 1)[0];
+
+                // 紀錄結果
+                const now = new Date();
+                const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+                person.drawnShift = wonShift;
+                person.drawnTime = timeStr;
+                saveState();
+
+                // 顯示結果彈窗與撒花特效
+                document.getElementById('modal-staff-name').textContent = `${currCfg.date} ｜ ${person.name}`;
+                document.getElementById('modal-shift-result').textContent = wonShift;
+                document.getElementById('result-modal').classList.remove('hidden');
+
+                if (typeof confetti === 'function') {
+                    confetti({
+                        particleCount: 70,
+                        spread: 60,
+                        origin: { y: 0.6 }
+                    });
+                }
+
+                isDrawing = false;
+                selectedStaffId = null;
+                renderStaffStage();
+            }, 1200);
+        }
+
+        async function drawViaCloud(dateStr, staffId, shuffleInterval) {
+            const minWait = new Promise(r => setTimeout(r, 1200));
+            let result;
+            try {
+                await flushPush();
+                const both = await Promise.all([
+                    apiPost({ action: 'draw', date: dateStr, staffId: staffId }),
+                    minWait
+                ]);
+                result = both[0];
+            } catch (e) {
+                await minWait;
+                result = { ok: false, msg: '連線失敗，請再按一次「立即盲選抽班」' };
+            }
+
+            clearInterval(shuffleInterval);
+            document.getElementById('mystery-box').classList.remove('animate-shake');
+
+            if (result.state && Array.isArray(result.state.dateConfigs)) {
+                dateConfigs = result.state.dateConfigs;
+                lastCloudJson = JSON.stringify(dateConfigs);
+                saveLocalOnly();
+            }
+
+            isDrawing = false;
+            selectedStaffId = null;
+
+            if (!result.ok) {
+                showToast(result.msg || '抽籤失敗', 'error');
+                renderStaffStage();
+                return;
+            }
+
+            setSyncStatus('ok', '已同步到雲端');
+            document.getElementById('modal-staff-name').textContent = `${dateStr} ｜ ${result.name}`;
+            document.getElementById('modal-shift-result').textContent = result.shift;
+            document.getElementById('result-modal').classList.remove('hidden');
+            if (typeof confetti === 'function') {
+                confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+            }
+            renderStaffStage();
+        }
+
+        function closeResultModal() {
+            document.getElementById('result-modal').classList.add('hidden');
+        }
+
+        function renderResultsList() {
+            const currCfg = getActiveStaffConfig();
+            if (!currCfg) return;
+            const container = document.getElementById('results-list');
+            
+            // 將已抽籤者排在前面，未抽籤者排在後面
+            const sorted = [...currCfg.session.participants].sort((a, b) => {
+                if (a.drawnShift && !b.drawnShift) return -1;
+                if (!a.drawnShift && b.drawnShift) return 1;
+                return 0;
+            });
+
+            container.innerHTML = sorted.map(p => {
+                if (p.drawnShift) {
+                    return `
+                        <div class="flex items-center justify-between p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+                                    ${p.name.charAt(0)}
+                                </div>
+                                <div>
+                                    <div class="font-bold text-slate-800 text-sm">${p.name}</div>
+                                    <div class="text-[11px] text-slate-400">抽籤時間 ${p.drawnTime}</div>
+                                </div>
+                            </div>
+                            <span class="px-3.5 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-extrabold text-base shadow-sm">
+                                ${p.drawnShift}
+                            </span>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 opacity-70">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 rounded-full bg-slate-200 text-slate-500 font-bold text-xs flex items-center justify-center">
+                                    ${p.name.charAt(0)}
+                                </div>
+                                <div class="font-medium text-slate-600 text-sm">${p.name}</div>
+                            </div>
+                            <span class="text-xs font-medium text-slate-400 px-2.5 py-1 rounded-md bg-white border border-slate-200">
+                                尚未抽班
+                            </span>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        // 複製當日抽班結果
+        function copyResults() {
+            const currCfg = getActiveStaffConfig();
+            if (!currCfg) return;
+            const eventTitle = currCfg.event && currCfg.event.trim() ? ` ${currCfg.event.trim()}` : '';
+            let text = `📅 【${currCfg.date}${eventTitle} 盲選抽班結果】\n`;
+            text += `------------------------\n`;
+            currCfg.session.participants.forEach(p => {
+                text += `${p.name}：${p.drawnShift ? p.drawnShift : '(尚未抽班)'}\n`;
+            });
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast(`已複製 ${currCfg.date}${eventTitle} 抽班結果至剪貼簿！`, 'success');
+            } catch (err) {
+                showToast('複製失敗，請手動選取複製', 'error');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        // 匯出當日 Excel 檔案 (.xlsx) - 採用單列「日期 活動名稱」標題格式
+        function exportCurrentDateToExcel() {
+            const currCfg = getActiveStaffConfig();
+            if (!currCfg || currCfg.session.participants.length === 0) {
+                showToast('目前尚無抽班資料可匯出！', 'error');
+                return;
+            }
+            if (typeof XLSX === 'undefined') {
+                showToast('Excel 匯出元件載入中，請稍後再試', 'error');
+                return;
+            }
+
+            const eventName = currCfg.event && currCfg.event.trim() ? ` ${currCfg.event.trim()}` : '';
+            const dateColHeader = `${currCfg.date}${eventName}`;
+
+            const sheetRows = [
+                ['序號', '同仁姓名', dateColHeader, '抽籤時間']
+            ];
+            currCfg.session.participants.forEach((p, index) => {
+                sheetRows.push([
+                    index + 1,
+                    p.name,
+                    p.drawnShift ? p.drawnShift : '尚未抽班',
+                    p.drawnTime ? p.drawnTime : '-'
+                ]);
+            });
+
+            const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+            worksheet['!cols'] = [{ wch: 8 }, { wch: 15 }, { wch: 22 }, { wch: 14 }];
+
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, currCfg.date);
+            const fileSuffix = currCfg.event && currCfg.event.trim() ? `_${currCfg.event.trim()}` : '';
+            XLSX.writeFile(workbook, `抽班結果_${currCfg.date}${fileSuffix}.xlsx`);
+
+            showToast(`已成功匯出「抽班結果_${currCfg.date}${fileSuffix}.xlsx」`, 'success');
+        }
+
+        // 匯出所有日期整合總表 Excel (.xlsx) - 完全呈現圖片 12_2.JPG 的單列標題格式
+        function exportAllDatesToExcel() {
+            const activeConfigs = dateConfigs.filter(c => c.session.active);
+            if (activeConfigs.length === 0) {
+                showToast('目前尚無抽班資料可匯出！', 'error');
+                return;
+            }
+            if (typeof XLSX === 'undefined') {
+                showToast('Excel 匯出元件載入中，請稍後再試', 'error');
+                return;
+            }
+
+            const workbook = XLSX.utils.book_new();
+
+            // 彙整所有日期的參與同仁名單 (保持名單順序)
+            const allStaffNames = [];
+            activeConfigs.forEach(cfg => {
+                cfg.session.participants.forEach(p => {
+                    if (!allStaffNames.includes(p.name)) {
+                        allStaffNames.push(p.name);
+                    }
+                });
+            });
+
+            // 工作表 1：完全比照圖片 12_2.JPG 格式 (序號 | 同仁姓名 | 2026-11-21 忘年會 | 2026-11-28 單位聚餐 ...)
+            const singleHeader = ['序號', '同仁姓名', ...activeConfigs.map(cfg => {
+                const ev = (cfg.event && cfg.event.trim()) ? ` ${cfg.event.trim()}` : '';
+                return `${cfg.date}${ev}`;
+            })];
+
+            const summaryRows = [singleHeader];
+            allStaffNames.forEach((name, idx) => {
+                const row = [idx + 1, name];
+                activeConfigs.forEach(cfg => {
+                    const found = cfg.session.participants.find(p => p.name === name);
+                    if (!found) {
+                        row.push('未參與');
+                    } else {
+                        row.push(found.drawnShift ? found.drawnShift : '尚未抽班');
+                    }
+                });
+                summaryRows.push(row);
+            });
+
+            const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+            summarySheet['!cols'] = [{ wch: 8 }, { wch: 15 }, ...activeConfigs.map(() => ({ wch: 22 }))];
+            XLSX.utils.book_append_sheet(workbook, summarySheet, '多日班表總覽');
+
+            // 工作表 2：各日抽籤明細紀錄
+            let detailData = [];
+            activeConfigs.forEach(cfg => {
+                const ev = (cfg.event && cfg.event.trim()) ? ` ${cfg.event.trim()}` : '';
+                const dateWithEvent = `${cfg.date}${ev}`;
+                cfg.session.participants.forEach(p => {
+                    detailData.push({
+                        '抽班日期': dateWithEvent,
+                        '同仁姓名': p.name,
+                        '抽中班別': p.drawnShift ? p.drawnShift : '尚未抽班',
+                        '抽籤時間': p.drawnTime ? p.drawnTime : '-'
+                    });
+                });
+            });
+            const detailSheet = XLSX.utils.json_to_sheet(detailData);
+            detailSheet['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+            XLSX.utils.book_append_sheet(workbook, detailSheet, '各日抽籤明細');
+
+            const startDate = activeConfigs[0].date;
+            const endDate = activeConfigs[activeConfigs.length - 1].date;
+            const fileName = activeConfigs.length > 1 ? `多日抽班總表_${startDate}_至_${endDate}.xlsx` : `抽班結果_${startDate}.xlsx`;
+            
+            XLSX.writeFile(workbook, fileName);
+            showToast(`已成功匯出「${fileName}」`, 'success');
+        }
+
+        // ==================== 新增班別 / 同仁 Modal ====================
+        function openAddModal(type) {
+            addModalType = type;
+            const modal = document.getElementById('add-modal');
+            const title = document.getElementById('add-modal-title');
+            const input = document.getElementById('add-modal-input');
+
+            title.textContent = type === 'shift' ? '新增班別代號（同步加入所有日期）' : '新增同仁姓名（同步加入所有日期）';
+            input.placeholder = type === 'shift' ? '例如：D8、E7...' : '請輸入同仁姓名...';
+            input.value = '';
+            modal.classList.remove('hidden');
+            input.focus();
+        }
+
+        function closeAddModal() {
+            document.getElementById('add-modal').classList.add('hidden');
+        }
+
+        function confirmAddItem() {
+            const val = document.getElementById('add-modal-input').value.trim();
+            if (!val) {
+                showToast('內容不能為空！', 'error');
+                return;
+            }
+
+            if (addModalType === 'shift') {
+                const newId = 's' + Date.now();
+                dateConfigs.forEach(cfg => {
+                    const isCurrent = cfg.date === activeAdminDate;
+                    cfg.shifts.push({
+                        id: newId,
+                        code: val,
+                        checked: isCurrent,
+                        count: isCurrent ? 1 : 0
+                    });
+                });
+                showToast(`已新增班別「${val}」`, 'success');
+            } else {
+                const newId = 'u' + Date.now();
+                dateConfigs.forEach(cfg => {
+                    const isCurrent = cfg.date === activeAdminDate;
+                    cfg.staffList.push({
+                        id: newId,
+                        name: val,
+                        checked: isCurrent
+                    });
+                });
+                showToast(`已新增同仁「${val}」`, 'success');
+            }
+
+            saveState();
+            renderAdminView();
+            closeAddModal();
+        }
+
+        // ==================== Toast 提示訊息 ====================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                success: 'bg-emerald-600 text-white',
+                error: 'bg-rose-600 text-white',
+                info: 'bg-slate-800 text-white'
+            };
+
+            toast.className = `${colors[type]} px-4 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 animate-pop-in pointer-events-auto`;
+            toast.innerHTML = `<span>${message}</span>`;
+            
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 2800);
+        }
+
+        // ==================== 頁面初始化 ====================
+        window.onload = async function() {
+            const loaded = loadState();
+            if (!loaded) {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const firstDate = formatDateStr(tomorrow);
+                dateConfigs = [createDefaultDayConfig(firstDate)];
+                activeAdminDate = firstDate;
+                saveState();
+            }
+
+            // 設定頂部「新增日期」預設為目前最後一個日期的隔天
+            const lastDateStr = dateConfigs[dateConfigs.length - 1].date;
+            const nextDateObj = new Date(lastDateStr);
+            nextDateObj.setDate(nextDateObj.getDate() + 1);
+            document.getElementById('new-date-input').value = formatDateStr(nextDateObj);
+
+            // 支援在新增項目 Modal 按下 Enter 確認
+            const addModalInput = document.getElementById('add-modal-input');
+            if (addModalInput) {
+                addModalInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        confirmAddItem();
+                    }
+                });
+            }
+
+            renderAdminView();
+            lucide.createIcons();
+
+            // ===== 有連雲端：一打開就讀取雲端資料 =====
+            if (API_URL) {
+                setSyncStatus('sync', '讀取雲端資料中…');
+                try {
+                    const d = await apiGet();
+                    if (d.ok && d.state && d.state.updatedAt && Array.isArray(d.state.dateConfigs)) {
+                        // 雲端已經有資料 → 以雲端為準
+                        dateConfigs = d.state.dateConfigs;
+                        lastCloudJson = JSON.stringify(dateConfigs);
+                        if (!dateConfigs.some(c => c.date === activeAdminDate)) {
+                            activeAdminDate = dateConfigs.length > 0 ? dateConfigs[0].date : '';
+                        }
+                        saveLocalOnly();
+                        setSyncStatus('ok', '已連線雲端');
+                    } else {
+                        // 雲端第一次使用、還是空的 → 把這台電腦的資料傳上去
+                        await queuePush(true);
+                    }
+                } catch (e) {
+                    setSyncStatus('error', '無法連線雲端，目前為單機模式');
+                }
+                setInterval(() => refreshFromCloud(false), 4000);
+            }
+
+            // 網址後面加 ?mode=staff 可直接打開「同仁抽班」畫面
+            if (new URLSearchParams(location.search).get('mode') === 'staff') {
+                switchMode('staff');
+            } else {
+                renderAdminView();
+            }
+        };
+    </script>
 </body>
 </html>
